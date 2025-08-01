@@ -16,12 +16,6 @@ type DeviceFilter struct {
 	// Add more fields as needed for future filters
 }
 
-// DeviceListResponse is the response from the devices endpoint.
-type DeviceListResponse struct {
-	Data []models.Device `json:"data"`
-	// Add pagination or meta fields if needed
-}
-
 // DeviceService provides access to device-related API endpoints.
 type DeviceService struct {
 	Client *client.Client
@@ -33,9 +27,9 @@ func NewDeviceService(c *client.Client) *DeviceService {
 }
 
 // GetDevices fetches all devices from the RMS API, filtered by the given filter.
-func (s *DeviceService) GetDevices(ctx context.Context, filter DeviceFilter) ([]models.Device, error) {
+func (s *DeviceService) GetDevices(ctx context.Context, filter *DeviceFilter) ([]models.Device, error) {
 	params := url.Values{}
-	if filter.CompanyID != "" {
+	if filter != nil && filter.CompanyID != "" {
 		params.Set("company_id", filter.CompanyID)
 	}
 	endpoint := "/devices"
@@ -46,9 +40,12 @@ func (s *DeviceService) GetDevices(ctx context.Context, filter DeviceFilter) ([]
 	if err != nil {
 		return nil, err
 	}
-	var result DeviceListResponse
+	var result models.APIResponse[[]models.Device]
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode devices: %w", err)
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("RMS API returned success=false: %+v", result.Meta)
 	}
 	return result.Data, nil
 }
