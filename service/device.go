@@ -10,10 +10,10 @@ import (
 	"github.com/carrier-labs/go-teltonika-rms-api-client/models"
 )
 
-// DeviceFilter allows filtering the devices endpoint.
-type DeviceFilter struct {
-	CompanyID string
-	// Add more fields as needed for future filters
+// DeviceListParams allows filtering and paginating the devices endpoint.
+type DeviceListParams struct {
+	CompanyID int
+	Limit     int
 }
 
 // DeviceService provides access to device-related API endpoints.
@@ -26,15 +26,20 @@ func NewDeviceService(c *client.Client) *DeviceService {
 	return &DeviceService{Client: c}
 }
 
-// GetDevices fetches all devices from the RMS API, filtered by the given filter.
-func (s *DeviceService) GetDevices(ctx context.Context, filter *DeviceFilter) ([]models.Device, error) {
-	params := url.Values{}
-	if filter != nil && filter.CompanyID != "" {
-		params.Set("company_id", filter.CompanyID)
+// GetDevices fetches all devices from the RMS API, filtered by the given parameters.
+func (s *DeviceService) GetDevices(ctx context.Context, params *DeviceListParams) ([]models.Device, error) {
+	query := url.Values{}
+	if params != nil {
+		if params.CompanyID > 0 {
+			query.Set("company_id", fmt.Sprintf("%d", params.CompanyID))
+		}
+		if params.Limit > 0 {
+			query.Set("limit", fmt.Sprintf("%d", params.Limit))
+		}
 	}
 	endpoint := "/devices"
-	if len(params) > 0 {
-		endpoint += "?" + params.Encode()
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
 	}
 	respBody, err := s.Client.DoRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
