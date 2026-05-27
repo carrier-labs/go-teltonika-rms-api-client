@@ -23,6 +23,9 @@ const (
 	DefaultBaseURL = "https://rms.teltonika-networks.com/api"
 	AuthEndpoint   = "https://rms.teltonika-networks.com/account/authorize"
 	TokenEndpoint  = "https://rms.teltonika-networks.com/account/token"
+	// StatusBaseURL is the RMS Status API host, used to retrieve the async
+	// results of device actions (e.g. port scans) via a status channel.
+	StatusBaseURL = "https://rms.teltonika-networks.com/status"
 )
 
 // Config holds configuration for the RMS API client (OAuth2 Authorization Code Flow).
@@ -139,6 +142,41 @@ func (c *Client) DoRequest(ctx context.Context, method, path string, body interf
 	}
 	debug.Debug("HTTP request successful", "status", resp.StatusCode, "url", url)
 	return respBody, nil
+}
+
+// DoStatusRequest performs a GET against the RMS Status API host (StatusBaseURL)
+// and returns the body together with the HTTP status code. Unlike DoRequest it
+// does NOT treat a non-2xx status as an error, because callers polling a status
+// channel must distinguish "404 channel not ready yet" from a real failure.
+func (c *Client) DoStatusRequest(ctx context.Context, path string) ([]byte, int, error) {
+	c.mu.Lock()
+	pat := c.pat
+	token := c.accessToken
+	c.mu.Unlock()
+
+	url := StatusBaseURL + path
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Accept", "application/json")
+	if pat != "" {
+		req.Header.Set("Authorization", "Bearer "+pat)
+	} else if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		debug.Debug("Status API request failed", "error", err)
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	debug.Debug("Status API response", "status", resp.StatusCode, "url", url)
+	return body, resp.StatusCode, nil
 }
 
 // AuthCodeURL generates the URL for the OAuth2 authorization request.
