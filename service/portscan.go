@@ -5,15 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // PortDevice is a single device discovered on one of a router's network ports.
-// Vendor is resolved by RMS from the MAC OUI (e.g. "BrightSign").
+// Vendor is resolved by RMS from the MAC OUI (e.g. "BrightSign"). Port is the
+// physical LAN port number(s) the device is seen on, when the router reports
+// them (may be empty).
 type PortDevice struct {
 	MAC    string `json:"mac"`
 	IP     string `json:"ip"`
 	Vendor string `json:"vendor"`
+	Port   string `json:"port,omitempty"`
 }
 
 // portScanTrigger is the synchronous response to triggering a port scan; the
@@ -41,10 +45,37 @@ type portScanEntry struct {
 }
 
 type portScanPort struct {
-	ID      int          `json:"id"`
-	Type    string       `json:"type"` // "LAN" | "WAN"
-	Name    string       `json:"name"`
-	Devices []PortDevice `json:"devices"`
+	ID      int                 `json:"id"`
+	Type    string              `json:"type"` // "LAN" | "WAN"
+	Name    string              `json:"name"`
+	Devices []portScanRawDevice `json:"devices"`
+}
+
+// portScanRawDevice mirrors the raw device JSON, including the variably-typed
+// "port" array (numbers or strings), which we flatten into PortDevice.Port.
+type portScanRawDevice struct {
+	MAC    string        `json:"mac"`
+	IP     string        `json:"ip"`
+	Vendor string        `json:"vendor"`
+	Port   []interface{} `json:"port"`
+}
+
+// formatPorts renders the raw "port" array as a compact string (e.g. "1" or "1,2").
+func formatPorts(raw []interface{}) string {
+	parts := make([]string, 0, len(raw))
+	for _, v := range raw {
+		switch x := v.(type) {
+		case float64:
+			parts = append(parts, strconv.Itoa(int(x)))
+		case string:
+			if x != "" {
+				parts = append(parts, x)
+			}
+		default:
+			parts = append(parts, fmt.Sprintf("%v", v))
+		}
+	}
+	return strings.Join(parts, ",")
 }
 
 // ScanLANDevices triggers an ethernet port scan on the given device and returns
@@ -93,7 +124,14 @@ func (s *DeviceService) ScanLANDevices(ctx context.Context, deviceID int) ([]Por
 						var out []PortDevice
 						for _, p := range entry.Ports {
 							if p.Type == "LAN" {
-								out = append(out, p.Devices...)
+								for _, rd := range p.Devices {
+									out = append(out, PortDevice{
+										MAC:    rd.MAC,
+										IP:     rd.IP,
+										Vendor: rd.Vendor,
+										Port:   formatPorts(rd.Port),
+									})
+								}
 							}
 						}
 						return out, nil
